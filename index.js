@@ -5,7 +5,7 @@ app.use(express.json());
 
 // 🔑 FESTE LIZENZEN
 let keys = [
-    "9581-4725-1625",
+    "0000-4725-1625",
 ];
 
 // ======================
@@ -68,7 +68,7 @@ app.get("/admin", (req, res) => {
 
 <h1>License Admin Panel</h1>
 
-<input id="key" placeholder="XXXX-XXXX-XXXX"/>
+<input id="key" placeholder="0000-XXXX-XXXX"/>
 <br><br>
 
 <button onclick="add()">Add</button>
