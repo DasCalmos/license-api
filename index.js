@@ -5,9 +5,7 @@ app.use(express.json());
 
 // 🔑 FESTE LIZENZEN
 let keys = [
-    "CALMO-AB12-CD34",
-    "CALMO-X9F2-KL88",
-    "CALMO-9999-AAAA"
+    "9581-4725-1625",
 ];
 
 // ======================
@@ -70,7 +68,7 @@ app.get("/admin", (req, res) => {
 
 <h1>License Admin Panel</h1>
 
-<input id="key" placeholder="CALMO-XXXX-XXXX"/>
+<input id="key" placeholder="XXXX-XXXX-XXXX"/>
 <br><br>
 
 <button onclick="add()">Add</button>
