@@ -6,6 +6,7 @@ app.use(express.json());
 // 🔑 FESTE LIZENZEN
 let keys = [
     "0000-4725-1625",
+    "C-Admin"
 ];
 
 // ======================
