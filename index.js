@@ -6,11 +6,14 @@ app.use(express.json());
 
 // 🔐 LOGIN DATEN
 const ADMIN_USER = "admin";
-const ADMIN_PASS = "1234"; // später ändern!
+const ADMIN_PASS = "1234";
 
-// 🌐 MONGODB CONNECT
-mongoose.connect("mongodb+srv://manoxpvpbusiness_db_user:jFsyjyV5mGpNsZw7@cluster0.audi1qk.mongodb.net/?appName=Cluster0");
+// 🌐 MONGODB CONNECT (FIXED!)
+mongoose.connect("mongodb+srv://manoxpvpbusiness_db_user:jFsyjyV5mGpNsZw7@cluster0.audi1qk.mongodb.net/licenses?retryWrites=true&w=majority")
+.then(() => console.log("✅ MongoDB verbunden"))
+.catch(err => console.error("❌ Mongo Fehler:", err));
 
+// 📦 SCHEMA
 const KeySchema = new mongoose.Schema({
     key: String
 });
@@ -32,13 +35,19 @@ function auth(req, res, next) {
 // LICENSE CHECK
 // =====================
 app.get("/license", async (req, res) => {
-    const key = req.query.key;
+    try {
+        const key = req.query.key;
 
-    const exists = await Key.findOne({ key });
+        const exists = await Key.findOne({ key });
 
-    if (exists) return res.send("VALID");
+        if (exists) return res.send("VALID");
 
-    res.send("INVALID");
+        res.send("INVALID");
+
+    } catch (err) {
+        console.error(err);
+        res.send("ERROR");
+    }
 });
 
 // =====================
@@ -51,7 +60,7 @@ app.get("/admin", auth, async (req, res) => {
     res.send(`
     <html>
     <body style="background:#0f172a;color:white;font-family:sans-serif;text-align:center">
-    
+
     <h1>🔐 License Panel</h1>
 
     <input id="key" placeholder="New Key"/>
@@ -102,27 +111,38 @@ app.get("/admin", auth, async (req, res) => {
 // ADD KEY
 // =====================
 app.post("/api/add", auth, async (req, res) => {
+    try {
+        const key = req.body.key;
 
-    const key = req.body.key;
+        if (!key) return res.send("NO KEY");
 
-    if (!key) return res.send("NO KEY");
+        await Key.create({ key });
 
-    await Key.create({ key });
+        res.send("ADDED");
 
-    res.send("ADDED");
+    } catch (err) {
+        console.error(err);
+        res.send("ERROR");
+    }
 });
 
 // =====================
 // REMOVE KEY
 // =====================
 app.post("/api/remove", auth, async (req, res) => {
+    try {
+        const key = req.body.key;
 
-    const key = req.body.key;
+        await Key.deleteOne({ key });
 
-    await Key.deleteOne({ key });
+        res.send("REMOVED");
 
-    res.send("REMOVED");
+    } catch (err) {
+        console.error(err);
+        res.send("ERROR");
+    }
 });
 
+// =====================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("API läuft"));
+app.listen(PORT, () => console.log("🚀 API läuft"));
