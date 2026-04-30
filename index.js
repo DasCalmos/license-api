@@ -1,123 +1,128 @@
 const express = require("express");
-const app = express();
+const mongoose = require("mongoose");
 
+const app = express();
 app.use(express.json());
 
-// 🔑 FESTE LIZENZEN
-let keys = [
-    "0000-4725-1625",
-    "C-Admin"
-];
+// 🔐 LOGIN DATEN
+const ADMIN_USER = "admin";
+const ADMIN_PASS = "1234"; // später ändern!
 
-// ======================
-// LICENSE CHECK (PLUGIN)
-// ======================
-app.get("/license", (req, res) => {
+// 🌐 MONGODB CONNECT
+mongoose.connect("DEINE_MONGO_URL");
+
+const KeySchema = new mongoose.Schema({
+    key: String
+});
+
+const Key = mongoose.model("Key", KeySchema);
+
+// 🔐 LOGIN CHECK
+function auth(req, res, next) {
+    const { user, pass } = req.query;
+
+    if (user === ADMIN_USER && pass === ADMIN_PASS) {
+        return next();
+    }
+
+    res.send("Login required");
+}
+
+// =====================
+// LICENSE CHECK
+// =====================
+app.get("/license", async (req, res) => {
     const key = req.query.key;
 
-    if (keys.includes(key)) {
-        return res.send("VALID");
-    }
+    const exists = await Key.findOne({ key });
+
+    if (exists) return res.send("VALID");
 
     res.send("INVALID");
 });
 
-// ======================
-// 📋 GET KEYS
-// ======================
-app.get("/api/keys", (req, res) => {
-    res.json(keys);
+// =====================
+// ADMIN PANEL
+// =====================
+app.get("/admin", auth, async (req, res) => {
+
+    const keys = await Key.find();
+
+    res.send(`
+    <html>
+    <body style="background:#0f172a;color:white;font-family:sans-serif;text-align:center">
+    
+    <h1>🔐 License Panel</h1>
+
+    <input id="key" placeholder="New Key"/>
+    <br><br>
+
+    <button onclick="add()">Add</button>
+
+    <h2>Keys</h2>
+    <ul>
+        ${keys.map(k => `
+            <li>
+                ${k.key}
+                <button onclick="del('${k.key}')">❌</button>
+            </li>
+        `).join("")}
+    </ul>
+
+    <script>
+    async function add(){
+        const key = document.getElementById('key').value;
+
+        await fetch('/api/add?user=${ADMIN_USER}&pass=${ADMIN_PASS}',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({key})
+        });
+
+        location.reload();
+    }
+
+    async function del(key){
+        await fetch('/api/remove?user=${ADMIN_USER}&pass=${ADMIN_PASS}',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({key})
+        });
+
+        location.reload();
+    }
+    </script>
+
+    </body>
+    </html>
+    `);
 });
 
-// ======================
-// ➕ ADD KEY
-// ======================
-app.post("/api/add", (req, res) => {
+// =====================
+// ADD KEY
+// =====================
+app.post("/api/add", auth, async (req, res) => {
+
     const key = req.body.key;
 
     if (!key) return res.send("NO KEY");
 
-    if (!keys.includes(key)) {
-        keys.push(key);
-    }
+    await Key.create({ key });
 
     res.send("ADDED");
 });
 
-// ======================
-// ❌ REMOVE KEY
-// ======================
-app.post("/api/remove", (req, res) => {
+// =====================
+// REMOVE KEY
+// =====================
+app.post("/api/remove", auth, async (req, res) => {
+
     const key = req.body.key;
 
-    keys = keys.filter(k => k !== key);
+    await Key.deleteOne({ key });
 
     res.send("REMOVED");
 });
 
-// ======================
-// 🖥️ ADMIN PANEL
-// ======================
-app.get("/admin", (req, res) => {
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<title>License Panel</title>
-</head>
-<body style="background:#111;color:white;font-family:Arial;text-align:center;">
-
-<h1>License Admin Panel</h1>
-
-<input id="key" placeholder="0000-XXXX-XXXX"/>
-<br><br>
-
-<button onclick="add()">Add</button>
-<button onclick="remove()">Remove</button>
-
-<h2>Keys:</h2>
-<pre id="list"></pre>
-
-<script>
-
-async function load(){
-    const res = await fetch('/api/keys');
-    const data = await res.json();
-    document.getElementById('list').innerText = data.join('\\n');
-}
-
-async function add(){
-    const key = document.getElementById('key').value;
-
-    await fetch('/api/add',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({key})
-    });
-
-    load();
-}
-
-async function remove(){
-    const key = document.getElementById('key').value;
-
-    await fetch('/api/remove',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({key})
-    });
-
-    load();
-}
-
-load();
-
-</script>
-
-</body>
-</html>
-    `);
-});
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("License API läuft"));
+app.listen(PORT, () => console.log("API läuft"));
