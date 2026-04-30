@@ -9,7 +9,7 @@ const ADMIN_USER = "admin";
 const ADMIN_PASS = "1234"; // später ändern!
 
 // 🌐 MONGODB CONNECT
-mongoose.connect("DEINE_MONGO_URL");
+mongoose.connect("mongodb+srv://manoxpvpbusiness_db_user:jFsyjyV5mGpNsZw7@cluster0.audi1qk.mongodb.net/?appName=Cluster0");
 
 const KeySchema = new mongoose.Schema({
     key: String
