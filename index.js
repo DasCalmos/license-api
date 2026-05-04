@@ -8,7 +8,7 @@ app.use(express.json());
 const ADMIN_USER = "admin";
 const ADMIN_PASS = "1234";
 
-// 🌐 MONGODB CONNECT (FIXED!)
+// 🌐 MONGODB CONNECT
 mongoose.connect("mongodb+srv://manoxpvpbusiness_db_user:jFsyjyV5mGpNsZw7@cluster0.audi1qk.mongodb.net/licenses?retryWrites=true&w=majority")
 .then(() => console.log("✅ MongoDB verbunden"))
 .catch(err => console.error("❌ Mongo Fehler:", err));
@@ -28,8 +28,15 @@ function auth(req, res, next) {
         return next();
     }
 
-    res.send("Login required");
+    res.status(401).send("Login required");
 }
+
+// =====================
+// 🔥 PING ENDPOINT (NEU)
+// =====================
+app.get("/ping", (req, res) => {
+    res.status(200).send("OK");
+});
 
 // =====================
 // LICENSE CHECK
@@ -37,6 +44,8 @@ function auth(req, res, next) {
 app.get("/license", async (req, res) => {
     try {
         const key = req.query.key;
+
+        if (!key) return res.send("INVALID");
 
         const exists = await Key.findOne({ key });
 
