@@ -4,23 +4,19 @@ const mongoose = require("mongoose");
 const app = express();
 app.use(express.json());
 
-// 🔐 LOGIN DATEN
 const ADMIN_USER = "admin";
 const ADMIN_PASS = "1234";
 
-// 🌐 MONGODB CONNECT
 mongoose.connect("mongodb+srv://manoxpvpbusiness_db_user:jFsyjyV5mGpNsZw7@cluster0.audi1qk.mongodb.net/licenses?retryWrites=true&w=majority")
-.then(() => console.log("✅ MongoDB verbunden"))
-.catch(err => console.error("❌ Mongo Fehler:", err));
+.then(() => console.log("✅ Database Connected"))
+.catch(err => console.error("❌ Database Error:", err));
 
-// 📦 SCHEMA
 const KeySchema = new mongoose.Schema({
     key: String
 });
 
 const Key = mongoose.model("Key", KeySchema);
 
-// 🔐 LOGIN CHECK
 function auth(req, res, next) {
     const { user, pass } = req.query;
 
@@ -31,16 +27,10 @@ function auth(req, res, next) {
     res.status(401).send("Login required");
 }
 
-// =====================
-// 🔥 PING ENDPOINT (NEU)
-// =====================
 app.get("/ping", (req, res) => {
     res.status(200).send("OK");
 });
 
-// =====================
-// LICENSE CHECK
-// =====================
 app.get("/license", async (req, res) => {
     try {
         const key = req.query.key;
@@ -59,9 +49,6 @@ app.get("/license", async (req, res) => {
     }
 });
 
-// =====================
-// ADMIN PANEL
-// =====================
 app.get("/admin", auth, async (req, res) => {
 
     const keys = await Key.find();
@@ -116,9 +103,6 @@ app.get("/admin", auth, async (req, res) => {
     `);
 });
 
-// =====================
-// ADD KEY
-// =====================
 app.post("/api/add", auth, async (req, res) => {
     try {
         const key = req.body.key;
@@ -135,9 +119,6 @@ app.post("/api/add", auth, async (req, res) => {
     }
 });
 
-// =====================
-// REMOVE KEY
-// =====================
 app.post("/api/remove", auth, async (req, res) => {
     try {
         const key = req.body.key;
@@ -152,6 +133,5 @@ app.post("/api/remove", auth, async (req, res) => {
     }
 });
 
-// =====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("🚀 API läuft"));
