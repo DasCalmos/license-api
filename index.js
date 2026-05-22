@@ -37,15 +37,17 @@ app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     store: MongoStore.create({
         mongoUrl: MONGO_URI,
-        collectionName: "sessions"
+        collectionName: "sessions",
+        ttl: 30 * 60
     }),
     cookie: {
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
-        maxAge: 1000 * 60 * 60 * 4
+        maxAge: 1000 * 60 * 30
     }
 }));
 
