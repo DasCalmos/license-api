@@ -269,6 +269,7 @@ app.get("/", (req, res) => res.redirect("/admin"));
 
 app.get("/login", (req, res) => {
     if (req.session.userId) return res.redirect("/admin");
+    res.set("Cache-Control", "no-store");
     const message = req.query.expired === "1" ? "Your session expired. Please sign in again." : "";
     res.status(200).send(renderLogin({ csrfToken: ensureCsrfToken(req), message }));
 });
@@ -332,6 +333,7 @@ app.get("/license", async (req, res) => {
 
 app.get("/admin", requireLogin, async (req, res, next) => {
     try {
+        res.set("Cache-Control", "no-store");
         const perms = req.currentUser.permissions;
         const [keys, users, totalKeys, totalUsers] = await Promise.all([
             perms.viewKeys ? Key.find().sort({ createdAt: -1 }).lean() : [],
