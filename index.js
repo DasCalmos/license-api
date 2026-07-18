@@ -13,7 +13,7 @@ const { renderLogin, renderAdmin } = require("./views");
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT) || 3000;
-const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_USER = process.env.ADMIN_USER || "user";
 const ADMIN_PASS = process.env.ADMIN_PASS;
 const MONGO_URI = process.env.MONGO_URI;
 const SESSION_SECRET = process.env.SESSION_SECRET;
@@ -26,8 +26,8 @@ const LOGIN_BUCKET_LIMIT = 10000;
 const loginAttempts = new Map();
 const dummyPasswordHash = bcrypt.hash("dummy-password-never-used", 12);
 
-if (!ADMIN_USER || !ADMIN_PASS || !MONGO_URI || !SESSION_SECRET) {
-    console.error("Missing environment variables: MONGO_URI, ADMIN_USER, ADMIN_PASS, SESSION_SECRET");
+if (!ADMIN_PASS || !MONGO_URI || !SESSION_SECRET) {
+    console.error("Missing environment variables: MONGO_URI, ADMIN_PASS, SESSION_SECRET");
     process.exit(1);
 }
 
@@ -182,6 +182,9 @@ async function requireLogin(req, res, next) {
         if (!user) {
             return req.session.destroy(() => res.redirect("/login"));
         }
+        if (user.isOwner) {
+            user.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
+        }
         req.currentUser = user;
         next();
     } catch (err) {
@@ -236,12 +239,16 @@ function recordLoginFailure(key) {
 
 async function createOrMigrateOwner() {
     const existingOwner = await User.findOne({ isOwner: true });
-    if (existingOwner) return;
+    if (existingOwner) {
+        existingOwner.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
+        await existingOwner.save();
+        return;
+    }
 
     const existingUser = await User.findOne().sort({ "permissions.manageUsers": -1, createdAt: 1 });
     if (existingUser) {
         existingUser.isOwner = true;
-        existingUser.permissions.manageUsers = true;
+        existingUser.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
         await existingUser.save();
         console.log(`Owner protection assigned to ${existingUser.username}`);
         return;
@@ -393,8 +400,8 @@ app.post("/api/users/update", requireLogin, requireCsrf, requirePermission("mana
         if (!mongoose.isValidObjectId(id)) return res.status(400).send("Invalid user ID");
         const target = await User.findById(id);
         if (!target) return res.status(404).send("User not found");
+        if (target.isOwner) return res.status(400).send("Admin permissions are fixed");
         const permissions = normalizePermissions(req.body.permissions);
-        if (target.isOwner) permissions.manageUsers = true;
         target.permissions = permissions;
         await target.save();
         res.send("USER UPDATED");

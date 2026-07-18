@@ -17,16 +17,17 @@ CSRF token, or additional header is required for this endpoint.
 
 ```env
 MONGO_URI=mongodb://...
-ADMIN_USER=owner
+# Optional; defaults to "user"
+ADMIN_USER=user
 ADMIN_PASS=choose-a-strong-initial-password
 SESSION_SECRET=use-at-least-32-random-characters
 NODE_ENV=production
 PORT=3000
 ```
 
-`ADMIN_USER` and `ADMIN_PASS` create the first account only. Existing databases are
-migrated automatically by protecting the oldest user with user-management access as
-the owner account.
+`ADMIN_USER` (default: `user`) and `ADMIN_PASS` create the first account only. Existing
+databases are migrated automatically by protecting the oldest user with user-management
+access as the owner account. Owner permissions are always fixed to full access.
 
 ## Run
 
