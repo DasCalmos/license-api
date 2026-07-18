@@ -17,6 +17,10 @@ function formatDate(value) {
     }).format(date);
 }
 
+// A new process is started for every deploy. Versioning asset URLs prevents an
+// older immutable CSS/JS response from being combined with newer HTML.
+const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || Date.now().toString(36);
+
 function pageShell({ title, body, csrfToken = "", pageClass = "" }) {
     return `<!doctype html>
 <html lang="en">
@@ -26,11 +30,11 @@ function pageShell({ title, body, csrfToken = "", pageClass = "" }) {
     <meta name="color-scheme" content="dark">
     <meta name="csrf-token" content="${escapeHtml(csrfToken)}">
     <title>${escapeHtml(title)}</title>
-    <link rel="stylesheet" href="/assets/admin.css">
+    <link rel="stylesheet" href="/assets/admin.css?v=${escapeHtml(ASSET_VERSION)}">
 </head>
 <body class="${escapeHtml(pageClass)}">
 ${body}
-<script src="/assets/admin.js" defer></script>
+<script src="/assets/admin.js?v=${escapeHtml(ASSET_VERSION)}" defer></script>
 </body>
 </html>`;
 }
@@ -56,7 +60,7 @@ function renderLogin({ csrfToken, message = "" }) {
     </section>
 
     <section class="login-panel">
-        <form class="login-card" method="post" action="/login">
+        <form class="login-card" method="post" action="/login" autocomplete="off">
             <input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}">
             <header>
                 <span class="mobile-brand"><span class="brand-mark small"><span></span></span> Calmo License</span>
@@ -67,11 +71,11 @@ function renderLogin({ csrfToken, message = "" }) {
             ${message ? `<div class="alert" role="alert">${escapeHtml(message)}</div>` : ""}
             <label class="field">
                 <span>Username</span>
-                <span class="input-wrap"><span class="field-icon" aria-hidden="true">@</span><input name="user" autocomplete="username" minlength="3" maxlength="32" placeholder="user" required autofocus></span>
+                <span class="input-wrap"><span class="field-icon" aria-hidden="true">@</span><input name="user" autocomplete="off" data-1p-ignore data-lpignore="true" minlength="3" maxlength="32" placeholder="user" required autofocus></span>
             </label>
             <label class="field">
                 <span>Password</span>
-                <span class="input-wrap"><span class="field-icon lock" aria-hidden="true"></span><input name="pass" type="password" autocomplete="current-password" required></span>
+                <span class="input-wrap"><span class="field-icon lock" aria-hidden="true"></span><input name="pass" type="password" autocomplete="new-password" data-1p-ignore data-lpignore="true" required></span>
             </label>
             <button class="button button-primary button-wide" type="submit">Sign in <span aria-hidden="true">→</span></button>
             <p class="form-note">Sessions expire automatically after inactivity.</p>
