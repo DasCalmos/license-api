@@ -1,0 +1,50 @@
+# Calmo License API
+
+Small Express and MongoDB service for managing license keys and panel users.
+
+## Java plugin compatibility
+
+The public validation contract is intentionally unchanged:
+
+```text
+GET /license?key=CALMO-XXXX-XXXX
+```
+
+The response body remains exactly one of `VALID`, `INVALID`, or `ERROR`. No login,
+CSRF token, or additional header is required for this endpoint.
+
+## Environment
+
+```env
+MONGO_URI=mongodb://...
+ADMIN_USER=owner
+ADMIN_PASS=choose-a-strong-initial-password
+SESSION_SECRET=use-at-least-32-random-characters
+NODE_ENV=production
+PORT=3000
+```
+
+`ADMIN_USER` and `ADMIN_PASS` create the first account only. Existing databases are
+migrated automatically by protecting the oldest user with user-management access as
+the owner account.
+
+## Run
+
+```bash
+npm install
+npm run check
+npm start
+```
+
+Production deployments must use HTTPS. The app expects one trusted reverse proxy,
+which matches common hosting platforms such as Render or Railway.
+
+## Security changes in 1.1
+
+- Session regeneration after login and an eight-hour absolute session lifetime
+- CSRF protection for login, logout, and every administrative write operation
+- Login throttling with constant-cost password verification for unknown users
+- Strict Content Security Policy with external CSS and JavaScript
+- Protected owner account to prevent administrative lockout races
+- Strict permission values, MongoDB ID validation, and bcrypt byte-length validation
+- Responsive redesigned login and administration interface
