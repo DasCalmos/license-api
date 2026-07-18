@@ -67,11 +67,23 @@
     document.querySelector(".menu-button")?.addEventListener("click", () => {
         document.body.classList.toggle("nav-open");
     });
-    document.querySelectorAll(".nav-item").forEach(link => link.addEventListener("click", () => {
+    function showView(name, updateHash = false) {
+        const allowed = new Set(Array.from(document.querySelectorAll("[data-view]"), item => item.dataset.view));
+        const target = allowed.has(name) ? name : "overview";
+        document.querySelectorAll("[data-view]").forEach(view => view.classList.toggle("active", view.dataset.view === target));
+        document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.getAttribute("href") === `#${target}`));
+        if (updateHash && location.hash !== `#${target}`) history.replaceState(null, "", `#${target}`);
         document.body.classList.remove("nav-open");
-        document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
-        link.classList.add("active");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    document.querySelectorAll(".nav-item").forEach(link => link.addEventListener("click", event => {
+        event.preventDefault();
+        document.body.classList.remove("nav-open");
+        showView(link.getAttribute("href").slice(1), true);
     }));
+    showView(location.hash.slice(1) || "overview");
+    window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
 
     document.getElementById("generate-key")?.addEventListener("click", () => {
         const input = document.getElementById("key");
@@ -100,6 +112,17 @@
         const query = event.target.value.trim().toLowerCase();
         document.querySelectorAll(".key-row").forEach(row => {
             row.hidden = !row.dataset.search.includes(query);
+        });
+    });
+
+    document.querySelectorAll(".key-copy").forEach(button => {
+        button.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(button.dataset.key);
+                showToast("License key copied.");
+            } catch {
+                showToast("Could not copy the license key.", true);
+            }
         });
     });
 

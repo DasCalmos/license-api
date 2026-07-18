@@ -67,7 +67,7 @@ function renderLogin({ csrfToken, message = "" }) {
             ${message ? `<div class="alert" role="alert">${escapeHtml(message)}</div>` : ""}
             <label class="field">
                 <span>Username</span>
-                <span class="input-wrap"><span class="field-icon" aria-hidden="true">@</span><input name="user" autocomplete="username" minlength="3" maxlength="32" required autofocus></span>
+                <span class="input-wrap"><span class="field-icon" aria-hidden="true">@</span><input name="user" autocomplete="username" minlength="3" maxlength="32" placeholder="user" required autofocus></span>
             </label>
             <label class="field">
                 <span>Password</span>
@@ -93,7 +93,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
         <tr class="key-row" data-search="${escapeHtml(key.key.toLowerCase())}">
             <td><span class="key-value"><span class="key-glyph" aria-hidden="true"></span>${escapeHtml(key.key)}</span></td>
             <td class="date-cell">${escapeHtml(formatDate(key.createdAt))}</td>
-            <td class="action-cell">${perms.deleteKeys ? `<button class="icon-button danger key-delete" data-key="${escapeHtml(key.key)}" type="button" aria-label="Delete ${escapeHtml(key.key)}">×</button>` : ""}</td>
+            <td class="action-cell"><div class="row-actions"><button class="icon-button key-copy" data-key="${escapeHtml(key.key)}" type="button" aria-label="Copy ${escapeHtml(key.key)}">&#10697;</button>${perms.deleteKeys ? `<button class="icon-button danger key-delete" data-key="${escapeHtml(key.key)}" type="button" aria-label="Delete ${escapeHtml(key.key)}">×</button>` : ""}</div></td>
         </tr>`).join("");
 
     const userCards = users.map(user => {
@@ -105,14 +105,14 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
                 <span class="avatar">${escapeHtml(user.username.slice(0, 1).toUpperCase())}</span>
                 <div><strong>${escapeHtml(user.username)}</strong><div class="badges">${owner ? `<span class="badge owner">Owner</span>` : ""}${isCurrent ? `<span class="badge">You</span>` : ""}<span class="joined">Joined ${escapeHtml(formatDate(user.createdAt))}</span></div></div>
             </div>
-            <div class="permission-grid">
+            ${owner ? `<div class="admin-access"><span class="lock-badge" aria-hidden="true">&#10003;</span><div><strong>Full access</strong><span>Admin permissions are fixed and cannot be changed.</span></div></div>` : `<div class="permission-grid">
                 ${permissionToggle(user, "viewKeys", "View keys")}
                 ${permissionToggle(user, "addKeys", "Add keys")}
                 ${permissionToggle(user, "deleteKeys", "Delete keys")}
-                ${permissionToggle(user, "manageUsers", "Manage users", owner)}
-            </div>
+                ${permissionToggle(user, "manageUsers", "Manage users")}
+            </div>`}
             <div class="user-actions">
-                <button class="button button-secondary user-save" type="button">Save</button>
+                ${owner ? `<span class="badge owner">Hardcoded admin</span>` : `<button class="button button-secondary user-save" type="button">Save</button>`}
                 ${!isCurrent && !owner ? `<button class="icon-button danger user-delete" type="button" aria-label="Delete ${escapeHtml(user.username)}">×</button>` : ""}
             </div>
         </article>`;
@@ -129,7 +129,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
         <nav aria-label="Main navigation">
             <a class="nav-item active" href="#overview"><span class="nav-icon grid-icon" aria-hidden="true"></span>Overview</a>
             ${perms.viewKeys ? `<a class="nav-item" href="#licenses"><span class="nav-icon key-icon" aria-hidden="true"></span>Licenses</a>` : ""}
-            ${perms.manageUsers ? `<a class="nav-item" href="#users"><span class="nav-icon users-icon" aria-hidden="true"></span>Team</a>` : ""}
+            ${perms.manageUsers ? `<a class="nav-item" href="#users"><span class="nav-icon users-icon" aria-hidden="true"></span>User</a>` : ""}
         </nav>
         <div class="sidebar-foot">
             <div class="profile"><span class="avatar small-avatar">${escapeHtml(currentUser.username.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(currentUser.username)}</strong><span>${currentUser.isOwner ? "Owner" : "Team member"}</span></div></div>
@@ -144,12 +144,23 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
             <span class="service-state"><span class="status-dot"></span>Service online</span>
         </header>
 
-        <section id="overview" class="stats-grid" aria-label="Overview">
-            <article class="stat-card accent"><div><span class="stat-label">Active licenses</span><strong>${totalKeys}</strong><span class="stat-help">Available to your plugins</span></div><span class="stat-symbol key-icon" aria-hidden="true"></span></article>
-            <article class="stat-card"><div><span class="stat-label">Team members</span><strong>${totalUsers}</strong><span class="stat-help">With panel access</span></div><span class="stat-symbol users-icon" aria-hidden="true"></span></article>
-            <article class="stat-card"><div><span class="stat-label">API status</span><strong class="online-text">Online</strong><span class="stat-help">Plugin checks are available</span></div><span class="stat-symbol pulse-icon" aria-hidden="true"></span></article>
-        </section>
+        <div class="view-page active" data-view="overview">
+            <section id="overview" class="stats-grid" aria-label="Overview">
+                <article class="stat-card accent"><div><span class="stat-label">Active licenses</span><strong>${totalKeys}</strong><span class="stat-help">Available to your plugins</span></div><span class="stat-symbol key-icon" aria-hidden="true"></span></article>
+                <article class="stat-card"><div><span class="stat-label">Users</span><strong>${totalUsers}</strong><span class="stat-help">With panel access</span></div><span class="stat-symbol users-icon" aria-hidden="true"></span></article>
+                <article class="stat-card"><div><span class="stat-label">API status</span><strong class="online-text">Online</strong><span class="stat-help">Plugin checks are available</span></div><span class="stat-symbol pulse-icon" aria-hidden="true"></span></article>
+            </section>
+            <section class="panel overview-panel">
+                <div class="panel-heading"><div><span class="section-kicker">System snapshot</span><h2>Everything in one glance</h2><p>Your license service is ready for existing Java plugins.</p></div></div>
+                <div class="feature-grid">
+                    <article><span class="feature-icon key-icon" aria-hidden="true"></span><div><strong>Plugin endpoint</strong><code>/license?key=...</code></div></article>
+                    <article><span class="feature-icon pulse-icon" aria-hidden="true"></span><div><strong>Health check</strong><code>/ping</code></div></article>
+                    <article><span class="feature-icon users-icon" aria-hidden="true"></span><div><strong>Your access</strong><span>${currentUser.isOwner ? "Administrator · Full access" : "User account"}</span></div></article>
+                </div>
+            </section>
+        </div>
 
+        <div class="view-page" data-view="licenses">
         ${perms.addKeys ? `
         <section class="panel quick-create">
             <div class="panel-heading"><div><span class="section-kicker">Quick action</span><h2>Create a license</h2><p>Add an existing key or generate a strong one instantly.</p></div></div>
@@ -168,16 +179,19 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
             </div>
         </section>` : `
         <section class="panel empty-state"><span class="lock-large"></span><h2>License inventory is restricted</h2><p>Your account does not have permission to view keys.</p></section>`}
+        </div>
 
+        <div class="view-page" data-view="users">
         ${perms.manageUsers ? `
         <section id="users" class="panel team-panel">
-            <div class="panel-heading"><div><span class="section-kicker">Access control</span><h2>Team permissions</h2><p>Grant only the access each panel user needs.</p></div></div>
+            <div class="panel-heading"><div><span class="section-kicker">Access control</span><h2>User management</h2><p>Create users and grant only the access each account needs. Admin access is fixed.</p></div></div>
             <form id="create-user-form" class="create-user">
                 <div class="form-grid"><label class="field compact"><span>Username</span><input id="newUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" placeholder="new_user" required></label><label class="field compact"><span>Temporary password</span><input id="newPassword" type="password" minlength="10" maxlength="72" placeholder="10+ characters" required></label></div>
                 <div class="new-user-bottom"><div class="permission-grid create-permissions"><label class="permission"><input id="permView" type="checkbox" checked><span>View keys</span></label><label class="permission"><input id="permAdd" type="checkbox"><span>Add keys</span></label><label class="permission"><input id="permDelete" type="checkbox"><span>Delete keys</span></label><label class="permission"><input id="permUsers" type="checkbox"><span>Manage users</span></label></div><button class="button button-primary" type="submit">Create user</button></div>
             </form>
             <div class="user-list">${userCards}</div>
-        </section>` : ""}
+        </section>` : `<section class="panel empty-state"><span class="lock-large"></span><h2>User management is restricted</h2><p>Your account cannot manage panel users.</p></section>`}
+        </div>
         <footer class="page-footer">Calmo License · Plugin API compatibility preserved</footer>
     </main>
 </div>
