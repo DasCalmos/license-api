@@ -23,11 +23,24 @@ ADMIN_PASS=choose-a-strong-initial-password
 SESSION_SECRET=use-at-least-32-random-characters
 NODE_ENV=production
 PORT=3000
+
+# LiteBans (password must be added only in Render)
+LITEBANS_DB_HOST=62.72.177.23
+LITEBANS_DB_PORT=3306
+LITEBANS_DB_NAME=s6538_litebans
+LITEBANS_DB_USER=u6538_obShyClfxu
+LITEBANS_DB_PASSWORD=
+LITEBANS_TABLE_PREFIX=litebans_
+LITEBANS_DB_SSL=false
 ```
 
 `ADMIN_USER` (default: `user`) and `ADMIN_PASS` create the first account only. Existing
 databases are migrated automatically by protecting the oldest user with user-management
 access as the owner account. Owner permissions are always fixed to full access.
+
+The LiteBans panel is read-only. If `LITEBANS_DB_PASSWORD` is missing or the external
+database is unavailable, the license service continues to run and the panel displays a
+setup notice. Never commit the database password to this repository.
 
 ## Run
 

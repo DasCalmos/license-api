@@ -159,7 +159,8 @@
                     viewKeys: document.getElementById("permView").checked,
                     addKeys: document.getElementById("permAdd").checked,
                     deleteKeys: document.getElementById("permDelete").checked,
-                    manageUsers: document.getElementById("permUsers").checked
+                    manageUsers: document.getElementById("permUsers").checked,
+                    viewLiteBans: document.getElementById("permLiteBans").checked
                 }
             });
             showToast("User created.");
@@ -181,7 +182,8 @@
                         viewKeys: row.querySelector(".p-viewKeys").checked,
                         addKeys: row.querySelector(".p-addKeys").checked,
                         deleteKeys: row.querySelector(".p-deleteKeys").checked,
-                        manageUsers: row.querySelector(".p-manageUsers").checked
+                        manageUsers: row.querySelector(".p-manageUsers").checked,
+                        viewLiteBans: row.querySelector(".p-viewLiteBans").checked
                     }
                 });
                 showToast("Permissions saved.");
@@ -209,4 +211,26 @@
             }
         });
     });
+
+    const liteBansSearch = document.getElementById("litebans-search");
+    const liteBansType = document.getElementById("litebans-type");
+    const liteBansStatus = document.getElementById("litebans-status");
+    function filterLiteBans() {
+        const query = liteBansSearch?.value.trim().toLowerCase() || "";
+        const type = liteBansType?.value || "all";
+        const status = liteBansStatus?.value || "all";
+        let visible = 0;
+        document.querySelectorAll(".litebans-row").forEach(row => {
+            const matchesQuery = !query || row.dataset.search.includes(query);
+            const matchesType = type === "all" || row.dataset.type === type;
+            const matchesStatus = status === "all" || row.dataset.status === status;
+            row.hidden = !(matchesQuery && matchesType && matchesStatus);
+            if (!row.hidden) visible += 1;
+        });
+        const empty = document.getElementById("litebans-empty-filter");
+        if (empty) empty.hidden = visible !== 0;
+    }
+    liteBansSearch?.addEventListener("input", filterLiteBans);
+    liteBansType?.addEventListener("change", filterLiteBans);
+    liteBansStatus?.addEventListener("change", filterLiteBans);
 })();

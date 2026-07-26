@@ -9,6 +9,7 @@ const MongoStore = require("connect-mongo");
 const helmet = require("helmet");
 const bcrypt = require("bcryptjs");
 const { renderLogin, renderAdmin } = require("./views");
+const { getLiteBansSnapshot } = require("./litebans");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -103,7 +104,8 @@ const UserSchema = new mongoose.Schema({
         viewKeys: { type: Boolean, default: true },
         addKeys: { type: Boolean, default: false },
         deleteKeys: { type: Boolean, default: false },
-        manageUsers: { type: Boolean, default: false }
+        manageUsers: { type: Boolean, default: false },
+        viewLiteBans: { type: Boolean, default: false }
     },
     createdAt: { type: Date, default: Date.now }
 });
@@ -135,7 +137,8 @@ function normalizePermissions(value) {
         viewKeys: value?.viewKeys === true,
         addKeys: value?.addKeys === true,
         deleteKeys: value?.deleteKeys === true,
-        manageUsers: value?.manageUsers === true
+        manageUsers: value?.manageUsers === true,
+        viewLiteBans: value?.viewLiteBans === true
     };
 }
 
@@ -183,7 +186,7 @@ async function requireLogin(req, res, next) {
             return req.session.destroy(() => res.redirect("/login"));
         }
         if (user.isOwner) {
-            user.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
+            user.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
         }
         req.currentUser = user;
         next();
@@ -240,7 +243,7 @@ function recordLoginFailure(key) {
 async function createOrMigrateOwner() {
     const existingOwner = await User.findOne({ isOwner: true });
     if (existingOwner) {
-        existingOwner.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
+        existingOwner.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
         await existingOwner.save();
         return;
     }
@@ -248,7 +251,7 @@ async function createOrMigrateOwner() {
     const existingUser = await User.findOne().sort({ "permissions.manageUsers": -1, createdAt: 1 });
     if (existingUser) {
         existingUser.isOwner = true;
-        existingUser.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true };
+        existingUser.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
         await existingUser.save();
         console.log(`Owner protection assigned to ${existingUser.username}`);
         return;
@@ -259,7 +262,7 @@ async function createOrMigrateOwner() {
         username: ADMIN_USER,
         passwordHash,
         isOwner: true,
-        permissions: { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true }
+        permissions: { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true }
     });
     console.log("First owner user created from ADMIN_USER / ADMIN_PASS");
 }
@@ -335,11 +338,12 @@ app.get("/admin", requireLogin, async (req, res, next) => {
     try {
         res.set("Cache-Control", "no-store");
         const perms = req.currentUser.permissions;
-        const [keys, users, totalKeys, totalUsers] = await Promise.all([
+        const [keys, users, totalKeys, totalUsers, liteBans] = await Promise.all([
             perms.viewKeys ? Key.find().sort({ createdAt: -1 }).lean() : [],
             perms.manageUsers ? User.find().sort({ isOwner: -1, createdAt: 1 }).lean() : [],
             Key.countDocuments(),
-            User.countDocuments()
+            User.countDocuments(),
+            perms.viewLiteBans ? getLiteBansSnapshot() : Promise.resolve(null)
         ]);
         res.send(renderAdmin({
             currentUser: req.currentUser.toObject(),
@@ -347,6 +351,7 @@ app.get("/admin", requireLogin, async (req, res, next) => {
             users,
             totalKeys,
             totalUsers,
+            liteBans,
             csrfToken: ensureCsrfToken(req)
         }));
     } catch (err) {

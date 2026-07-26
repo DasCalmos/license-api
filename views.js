@@ -17,6 +17,29 @@ function formatDate(value) {
     }).format(date);
 }
 
+function formatDateTime(value) {
+    const date = new Date(Number(value));
+    if (Number.isNaN(date.getTime())) return "Unknown";
+    return new Intl.DateTimeFormat("en", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+    }).format(date);
+}
+
+function liteBansStatus(record) {
+    if (record.type === "kicks") return { label: "Recorded", className: "neutral" };
+    if (record.active) {
+        return {
+            label: record.until > 0 ? `Until ${formatDateTime(record.until)}` : "Permanent",
+            className: "active"
+        };
+    }
+    return { label: "Expired / removed", className: "inactive" };
+}
+
 // A new process is started for every deploy. Versioning asset URLs prevents an
 // older immutable CSS/JS response from being combined with newer HTML.
 const ASSET_VERSION = process.env.RENDER_GIT_COMMIT || Date.now().toString(36);
@@ -91,7 +114,7 @@ function permissionToggle(user, permission, label, disabled = false) {
     return `<label class="permission"><input class="p-${permission}" type="checkbox"${checked}${lock}><span>${escapeHtml(label)}</span></label>`;
 }
 
-function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToken }) {
+function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans = null, csrfToken }) {
     const perms = currentUser.permissions;
     const keyRows = keys.map(key => `
         <tr class="key-row" data-search="${escapeHtml(key.key.toLowerCase())}">
@@ -114,12 +137,26 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
                 ${permissionToggle(user, "addKeys", "Add keys")}
                 ${permissionToggle(user, "deleteKeys", "Delete keys")}
                 ${permissionToggle(user, "manageUsers", "Manage users")}
+                ${permissionToggle(user, "viewLiteBans", "View LiteBans")}
             </div>`}
             <div class="user-actions">
                 ${owner ? `<span class="badge owner">Hardcoded admin</span>` : `<button class="button button-secondary user-save" type="button">Save</button>`}
                 ${!isCurrent && !owner ? `<button class="icon-button danger user-delete" type="button" aria-label="Delete ${escapeHtml(user.username)}">×</button>` : ""}
             </div>
         </article>`;
+    }).join("");
+
+    const liteBansRows = (liteBans?.records || []).map(record => {
+        const status = liteBansStatus(record);
+        const searchable = `${record.player} ${record.uuid} ${record.reason} ${record.staff} ${record.type}`.toLowerCase();
+        return `
+        <tr class="litebans-row" data-type="${escapeHtml(record.type)}" data-status="${record.active ? "active" : "inactive"}" data-search="${escapeHtml(searchable)}">
+            <td><div class="player-cell"><span class="avatar small-avatar">${escapeHtml(record.player.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(record.player)}</strong><span>${escapeHtml(record.uuid)}</span></div></div></td>
+            <td><span class="punishment-type type-${escapeHtml(record.type)}">${escapeHtml(record.type.slice(0, -1) || record.type)}</span></td>
+            <td><div class="reason-cell"><strong>${escapeHtml(record.reason)}</strong><span>by ${escapeHtml(record.staff)} · ${escapeHtml(record.server)}</span></div></td>
+            <td class="date-cell">${escapeHtml(formatDateTime(record.time))}</td>
+            <td><span class="punishment-status ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span></td>
+        </tr>`;
     }).join("");
 
     return pageShell({
@@ -134,6 +171,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
             <a class="nav-item active" href="#overview"><span class="nav-icon grid-icon" aria-hidden="true"></span>Overview</a>
             ${perms.viewKeys ? `<a class="nav-item" href="#licenses"><span class="nav-icon key-icon" aria-hidden="true"></span>Licenses</a>` : ""}
             ${perms.manageUsers ? `<a class="nav-item" href="#users"><span class="nav-icon users-icon" aria-hidden="true"></span>User</a>` : ""}
+            ${perms.viewLiteBans ? `<a class="nav-item" href="#litebans"><span class="nav-icon ban-icon" aria-hidden="true"></span>LiteBans</a>` : ""}
         </nav>
         <div class="sidebar-foot">
             <div class="profile"><span class="avatar small-avatar">${escapeHtml(currentUser.username.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(currentUser.username)}</strong><span>${currentUser.isOwner ? "Owner" : "Team member"}</span></div></div>
@@ -191,11 +229,36 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, csrfToke
             <div class="panel-heading"><div><span class="section-kicker">Access control</span><h2>User management</h2><p>Create users and grant only the access each account needs. Admin access is fixed.</p></div></div>
             <form id="create-user-form" class="create-user">
                 <div class="form-grid"><label class="field compact"><span>Username</span><input id="newUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" placeholder="new_user" required></label><label class="field compact"><span>Temporary password</span><input id="newPassword" type="password" minlength="10" maxlength="72" placeholder="10+ characters" required></label></div>
-                <div class="new-user-bottom"><div class="permission-grid create-permissions"><label class="permission"><input id="permView" type="checkbox" checked><span>View keys</span></label><label class="permission"><input id="permAdd" type="checkbox"><span>Add keys</span></label><label class="permission"><input id="permDelete" type="checkbox"><span>Delete keys</span></label><label class="permission"><input id="permUsers" type="checkbox"><span>Manage users</span></label></div><button class="button button-primary" type="submit">Create user</button></div>
+                <div class="new-user-bottom"><div class="permission-grid create-permissions"><label class="permission"><input id="permView" type="checkbox" checked><span>View keys</span></label><label class="permission"><input id="permAdd" type="checkbox"><span>Add keys</span></label><label class="permission"><input id="permDelete" type="checkbox"><span>Delete keys</span></label><label class="permission"><input id="permUsers" type="checkbox"><span>Manage users</span></label><label class="permission"><input id="permLiteBans" type="checkbox"><span>View LiteBans</span></label></div><button class="button button-primary" type="submit">Create user</button></div>
             </form>
             <div class="user-list">${userCards}</div>
         </section>` : `<section class="panel empty-state"><span class="lock-large"></span><h2>User management is restricted</h2><p>Your account cannot manage panel users.</p></section>`}
         </div>
+        ${perms.viewLiteBans ? `
+        <div class="view-page" data-view="litebans">
+            <section class="litebans-stats" aria-label="LiteBans overview">
+                <article class="stat-card"><div><span class="stat-label">Active bans</span><strong>${liteBans?.stats?.bans || 0}</strong><span class="stat-help">Currently blocked players</span></div><span class="stat-symbol ban-icon" aria-hidden="true"></span></article>
+                <article class="stat-card"><div><span class="stat-label">Active mutes</span><strong>${liteBans?.stats?.mutes || 0}</strong><span class="stat-help">Current chat restrictions</span></div><span class="stat-symbol mute-icon" aria-hidden="true"></span></article>
+                <article class="stat-card"><div><span class="stat-label">Active warnings</span><strong>${liteBans?.stats?.warnings || 0}</strong><span class="stat-help">Warnings still in effect</span></div><span class="stat-symbol warning-icon" aria-hidden="true">!</span></article>
+                <article class="stat-card"><div><span class="stat-label">Recorded kicks</span><strong>${liteBans?.stats?.kicks || 0}</strong><span class="stat-help">All stored kick records</span></div><span class="stat-symbol kick-icon" aria-hidden="true">↗</span></article>
+            </section>
+            <section class="panel litebans-panel">
+                <div class="panel-heading split">
+                    <div><span class="section-kicker">Moderation</span><h2>LiteBans history</h2><p>Read-only punishment data from your Minecraft network.</p></div>
+                    <span class="connection-state ${liteBans?.connected ? "connected" : "disconnected"}"><span class="status-dot"></span>${liteBans?.connected ? "Database connected" : "Setup required"}</span>
+                </div>
+                ${!liteBans?.connected ? `<div class="integration-notice"><span class="warning-icon" aria-hidden="true">!</span><div><strong>${liteBans?.configured ? "Connection unavailable" : "Add the database password in Render"}</strong><p>${escapeHtml(liteBans?.error || "LiteBans is not configured yet.")}</p></div></div>` : `
+                <div class="litebans-toolbar">
+                    <label class="search"><span aria-hidden="true"></span><input id="litebans-search" type="search" placeholder="Search player, UUID, reason or staff…" autocomplete="off"></label>
+                    <label class="select-wrap"><span class="sr-only">Punishment type</span><select id="litebans-type"><option value="all">All punishments</option><option value="bans">Bans</option><option value="mutes">Mutes</option><option value="warnings">Warnings</option><option value="kicks">Kicks</option></select></label>
+                    <label class="select-wrap"><span class="sr-only">Punishment status</span><select id="litebans-status"><option value="all">Any status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+                </div>
+                <div class="table-wrap litebans-table-wrap">
+                    <table class="litebans-table"><thead><tr><th>Player</th><th>Type</th><th>Reason</th><th>Started</th><th>Status</th></tr></thead><tbody id="litebans-list">${liteBansRows || `<tr class="empty-row"><td colspan="5"><div class="empty-state"><span class="ban-icon"></span><strong>No punishments found</strong><p>LiteBans has not stored any records yet.</p></div></td></tr>`}</tbody></table>
+                </div>
+                <div id="litebans-empty-filter" class="empty-filter" hidden>No punishments match these filters.</div>`}
+            </section>
+        </div>` : ""}
         <footer class="page-footer">Calmo License · Plugin API compatibility preserved</footer>
     </main>
 </div>
