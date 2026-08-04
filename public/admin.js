@@ -141,6 +141,103 @@
         });
     });
 
+    document.querySelectorAll(".legacy-toggle").forEach(button => {
+        button.addEventListener("click", async () => {
+            const currentlyEnabled = button.dataset.enabled === "true";
+            const action = currentlyEnabled ? "disable" : "enable";
+            if (!await confirmAction(`${action[0].toUpperCase() + action.slice(1)} the legacy key-only endpoint for this license?`)) return;
+            try {
+                button.disabled = true;
+                await request("/api/licenses/legacy", { id: button.dataset.id, enabled: !currentlyEnabled });
+                showToast(`Legacy endpoint ${action}d.`);
+                setTimeout(() => location.reload(), 450);
+            } catch (err) {
+                button.disabled = false;
+                showToast(err.message, true);
+            }
+        });
+    });
+
+    document.getElementById("add-server-form")?.addEventListener("submit", async event => {
+        event.preventDefault();
+        const submit = event.submitter;
+        try {
+            if (!event.currentTarget.reportValidity()) return;
+            if (submit) submit.disabled = true;
+            await request("/api/servers/add", {
+                name: document.getElementById("serverName").value.trim(),
+                target: document.getElementById("serverTarget").value.trim(),
+                licenseId: document.getElementById("serverLicense").value,
+                enabled: true
+            });
+            showToast("Server whitelisted.");
+            setTimeout(() => location.reload(), 450);
+        } catch (err) {
+            if (submit) submit.disabled = false;
+            showToast(err.message, true);
+        }
+    });
+
+    document.getElementById("server-search")?.addEventListener("input", event => {
+        const query = event.target.value.trim().toLowerCase();
+        document.querySelectorAll(".server-row").forEach(row => {
+            row.hidden = !row.dataset.search.includes(query);
+        });
+    });
+
+    document.querySelectorAll(".server-save").forEach(button => {
+        button.addEventListener("click", async () => {
+            const row = button.closest(".server-row");
+            try {
+                button.disabled = true;
+                await request("/api/servers/update", {
+                    id: row.dataset.id,
+                    name: row.querySelector(".server-name").value.trim(),
+                    target: row.querySelector(".server-target").value.trim(),
+                    licenseId: row.querySelector(".server-license").value,
+                    enabled: row.querySelector(".server-enabled input").checked
+                });
+                showToast("Server saved.");
+                setTimeout(() => location.reload(), 450);
+            } catch (err) {
+                button.disabled = false;
+                showToast(err.message, true);
+            }
+        });
+    });
+
+    document.querySelectorAll(".server-refresh").forEach(button => {
+        button.addEventListener("click", async () => {
+            const row = button.closest(".server-row");
+            try {
+                button.disabled = true;
+                await request("/api/servers/refresh", { id: row.dataset.id });
+                showToast("DNS addresses refreshed.");
+                setTimeout(() => location.reload(), 450);
+            } catch (err) {
+                button.disabled = false;
+                showToast(err.message, true);
+            }
+        });
+    });
+
+    document.querySelectorAll(".server-delete").forEach(button => {
+        button.addEventListener("click", async () => {
+            const row = button.closest(".server-row");
+            const name = row.querySelector(".server-name")?.value || "this server";
+            if (!await confirmAction(`Remove ${name} from the whitelist?`)) return;
+            try {
+                button.disabled = true;
+                await request("/api/servers/remove", { id: row.dataset.id });
+                row.remove();
+                showToast("Server removed.");
+            } catch (err) {
+                button.disabled = false;
+                showToast(err.message, true);
+            }
+        });
+    });
+
     document.getElementById("create-user-form")?.addEventListener("submit", async event => {
         event.preventDefault();
         const username = document.getElementById("newUsername");
@@ -160,7 +257,9 @@
                     addKeys: document.getElementById("permAdd").checked,
                     deleteKeys: document.getElementById("permDelete").checked,
                     manageUsers: document.getElementById("permUsers").checked,
-                    viewLiteBans: document.getElementById("permLiteBans").checked
+                    viewLiteBans: document.getElementById("permLiteBans").checked,
+                    viewServers: document.getElementById("permServers").checked,
+                    manageServers: document.getElementById("permManageServers").checked
                 }
             });
             showToast("User created.");
@@ -183,7 +282,9 @@
                         addKeys: row.querySelector(".p-addKeys").checked,
                         deleteKeys: row.querySelector(".p-deleteKeys").checked,
                         manageUsers: row.querySelector(".p-manageUsers").checked,
-                        viewLiteBans: row.querySelector(".p-viewLiteBans").checked
+                        viewLiteBans: row.querySelector(".p-viewLiteBans").checked,
+                        viewServers: row.querySelector(".p-viewServers").checked,
+                        manageServers: row.querySelector(".p-manageServers").checked
                     }
                 });
                 showToast("Permissions saved.");
