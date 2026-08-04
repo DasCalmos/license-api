@@ -114,14 +114,35 @@ function permissionToggle(user, permission, label, disabled = false) {
     return `<label class="permission"><input class="p-${permission}" type="checkbox"${checked}${lock}><span>${escapeHtml(label)}</span></label>`;
 }
 
-function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans = null, csrfToken }) {
+function renderAdmin({ currentUser, keys, users, servers = [], totalKeys, totalUsers, totalServers = 0, liteBans = null, csrfToken }) {
     const perms = currentUser.permissions;
+    const serverCountByLicense = new Map();
+    for (const server of servers) {
+        const licenseId = String(server.license?._id || server.license || "");
+        serverCountByLicense.set(licenseId, (serverCountByLicense.get(licenseId) || 0) + 1);
+    }
     const keyRows = keys.map(key => `
         <tr class="key-row" data-search="${escapeHtml(key.key.toLowerCase())}">
             <td><span class="key-value"><span class="key-glyph" aria-hidden="true"></span>${escapeHtml(key.key)}</span></td>
+            <td><span class="api-mode ${key.legacyEnabled === false ? "secure" : "legacy"}">${key.legacyEnabled === false ? "v2 only" : "Legacy + v2"}</span><span class="table-subline">${perms.viewServers ? `${serverCountByLicense.get(String(key._id)) || 0} server(s) · ` : ""}${Number(key.legacyChecks || 0)} legacy · ${Number(key.secureChecks || 0)} secure</span><span class="table-subline">Last legacy: ${key.lastLegacyCheckAt ? escapeHtml(formatDate(key.lastLegacyCheckAt)) : "never"}</span></td>
             <td class="date-cell">${escapeHtml(formatDate(key.createdAt))}</td>
-            <td class="action-cell"><div class="row-actions"><button class="icon-button key-copy" data-key="${escapeHtml(key.key)}" type="button" aria-label="Copy ${escapeHtml(key.key)}">&#10697;</button>${perms.deleteKeys ? `<button class="icon-button danger key-delete" data-key="${escapeHtml(key.key)}" type="button" aria-label="Delete ${escapeHtml(key.key)}">×</button>` : ""}</div></td>
+            <td class="action-cell"><div class="row-actions">${perms.manageServers ? `<button class="button button-tiny legacy-toggle" data-id="${escapeHtml(key._id)}" data-enabled="${key.legacyEnabled === false ? "false" : "true"}" type="button">${key.legacyEnabled === false ? "Enable legacy" : "Disable legacy"}</button>` : ""}<button class="icon-button key-copy" data-key="${escapeHtml(key.key)}" type="button" aria-label="Copy ${escapeHtml(key.key)}">&#10697;</button>${perms.deleteKeys ? `<button class="icon-button danger key-delete" data-key="${escapeHtml(key.key)}" type="button" aria-label="Delete ${escapeHtml(key.key)}">×</button>` : ""}</div></td>
         </tr>`).join("");
+
+    const licenseOptions = keys.map(key => `<option value="${escapeHtml(key._id)}">${escapeHtml(key.key)}</option>`).join("");
+    const serverCards = servers.map(server => {
+        const licenseId = String(server.license?._id || server.license || "");
+        const options = keys.map(key => `<option value="${escapeHtml(key._id)}"${String(key._id) === licenseId ? " selected" : ""}>${escapeHtml(key.key)}</option>`).join("");
+        const resolved = (server.resolvedIps || []).join(", ") || "Not resolved";
+        const resolvedHosts = (server.resolvedHosts || []).join(", ");
+        const resolutionReady = (server.resolvedIps || []).length > 0;
+        return `
+        <article class="server-card server-row" data-id="${escapeHtml(server._id)}" data-search="${escapeHtml(`${server.name} ${server.target} ${server.license?.key || ""}`.toLowerCase())}">
+            <div class="server-card-head"><span class="server-symbol" aria-hidden="true"></span><div><strong>${escapeHtml(server.name)}</strong><span>${escapeHtml(server.target)}</span></div><span class="connection-state ${server.enabled && resolutionReady ? "connected" : "disconnected"}"><span class="status-dot"></span>${!server.enabled ? "Disabled" : resolutionReady ? "Ready" : "DNS unavailable"}</span></div>
+            <div class="server-meta"><div><span>Resolved IPs</span><code>${escapeHtml(resolved)}</code>${resolvedHosts ? `<small>SRV: ${escapeHtml(resolvedHosts)}</small>` : ""}</div><div><span>Last successful check</span><strong>${server.lastSeenAt ? escapeHtml(formatDate(server.lastSeenAt)) : "Never"}</strong>${server.lastSeenIp ? `<small>${escapeHtml(server.lastSeenIp)}</small>` : ""}</div><div><span>License</span><code>${escapeHtml(server.license?.key || "Missing license")}</code></div></div>
+            ${perms.manageServers ? `<div class="server-editor"><label class="field compact"><span>Name</span><input class="server-name" minlength="2" maxlength="64" value="${escapeHtml(server.name)}" required></label><label class="field compact"><span>IP or hostname</span><input class="server-target" maxlength="253" value="${escapeHtml(server.target)}" required></label><label class="field compact"><span>License</span><select class="server-license" required>${options}</select></label><label class="permission server-enabled"><input type="checkbox"${server.enabled ? " checked" : ""}><span>Enabled</span></label><div class="server-actions"><button class="button button-secondary server-refresh" type="button">Resolve DNS</button><button class="button button-primary server-save" type="button">Save</button><button class="icon-button danger server-delete" type="button" aria-label="Delete ${escapeHtml(server.name)}">×</button></div></div>` : ""}
+        </article>`;
+    }).join("");
 
     const userCards = users.map(user => {
         const isCurrent = String(user._id) === String(currentUser._id);
@@ -138,6 +159,8 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
                 ${permissionToggle(user, "deleteKeys", "Delete keys")}
                 ${permissionToggle(user, "manageUsers", "Manage users")}
                 ${permissionToggle(user, "viewLiteBans", "View LiteBans")}
+                ${permissionToggle(user, "viewServers", "View servers")}
+                ${permissionToggle(user, "manageServers", "Manage servers")}
             </div>`}
             <div class="user-actions">
                 ${owner ? `<span class="badge owner">Hardcoded admin</span>` : `<button class="button button-secondary user-save" type="button">Save</button>`}
@@ -170,6 +193,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
         <nav aria-label="Main navigation">
             <a class="nav-item active" href="#overview"><span class="nav-icon grid-icon" aria-hidden="true"></span>Overview</a>
             ${perms.viewKeys ? `<a class="nav-item" href="#licenses"><span class="nav-icon key-icon" aria-hidden="true"></span>Licenses</a>` : ""}
+            ${perms.viewServers ? `<a class="nav-item" href="#servers"><span class="nav-icon server-icon" aria-hidden="true"></span>Servers</a>` : ""}
             ${perms.manageUsers ? `<a class="nav-item" href="#users"><span class="nav-icon users-icon" aria-hidden="true"></span>User</a>` : ""}
             ${perms.viewLiteBans ? `<a class="nav-item" href="#litebans"><span class="nav-icon ban-icon" aria-hidden="true"></span>LiteBans</a>` : ""}
         </nav>
@@ -189,6 +213,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
         <div class="view-page active" data-view="overview">
             <section id="overview" class="stats-grid" aria-label="Overview">
                 <article class="stat-card accent"><div><span class="stat-label">Active licenses</span><strong>${totalKeys}</strong><span class="stat-help">Available to your plugins</span></div><span class="stat-symbol key-icon" aria-hidden="true"></span></article>
+                <article class="stat-card"><div><span class="stat-label">Whitelisted servers</span><strong>${totalServers}</strong><span class="stat-help">Protected by source IP</span></div><span class="stat-symbol server-icon" aria-hidden="true"></span></article>
                 <article class="stat-card"><div><span class="stat-label">Users</span><strong>${totalUsers}</strong><span class="stat-help">With panel access</span></div><span class="stat-symbol users-icon" aria-hidden="true"></span></article>
                 <article class="stat-card"><div><span class="stat-label">API status</span><strong class="online-text">Online</strong><span class="stat-help">Plugin checks are available</span></div><span class="stat-symbol pulse-icon" aria-hidden="true"></span></article>
             </section>
@@ -196,6 +221,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
                 <div class="panel-heading"><div><span class="section-kicker">System snapshot</span><h2>Everything in one glance</h2><p>Your license service is ready for existing Java plugins.</p></div></div>
                 <div class="feature-grid">
                     <article><span class="feature-icon key-icon" aria-hidden="true"></span><div><strong>Plugin endpoint</strong><code>/license?key=...</code></div></article>
+                    <article><span class="feature-icon server-icon" aria-hidden="true"></span><div><strong>Secure endpoint</strong><code>/v2/license?key=...</code></div></article>
                     <article><span class="feature-icon pulse-icon" aria-hidden="true"></span><div><strong>Health check</strong><code>/ping</code></div></article>
                     <article><span class="feature-icon users-icon" aria-hidden="true"></span><div><strong>Your access</strong><span>${currentUser.isOwner ? "Administrator · Full access" : "User account"}</span></div></article>
                 </div>
@@ -217,11 +243,16 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
         <section id="licenses" class="panel">
             <div class="panel-heading split"><div><span class="section-kicker">Inventory</span><h2>License keys</h2><p>${keys.length} visible ${keys.length === 1 ? "license" : "licenses"}</p></div><label class="search"><span aria-hidden="true"></span><input id="key-search" type="search" placeholder="Search licenses…" autocomplete="off"></label></div>
             <div class="table-wrap">
-                <table><thead><tr><th>License key</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="key-list">${keyRows || `<tr class="empty-row"><td colspan="3"><div class="empty-state"><span class="key-icon"></span><strong>No licenses yet</strong><p>Create the first key above.</p></div></td></tr>`}</tbody></table>
+                <table><thead><tr><th>License key</th><th>API mode</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="key-list">${keyRows || `<tr class="empty-row"><td colspan="4"><div class="empty-state"><span class="key-icon"></span><strong>No licenses yet</strong><p>Create the first key above.</p></div></td></tr>`}</tbody></table>
             </div>
         </section>` : `
         <section class="panel empty-state"><span class="lock-large"></span><h2>License inventory is restricted</h2><p>Your account does not have permission to view keys.</p></section>`}
         </div>
+
+        ${perms.viewServers ? `<div class="view-page" data-view="servers">
+            ${perms.manageServers ? `<section class="panel quick-create server-create-panel"><div class="panel-heading"><div><span class="section-kicker">IP whitelist</span><h2>Add a Minecraft server</h2><p>Use a public IP or a hostname such as ffaprac.de. Do not include a protocol or port.</p></div></div><form id="add-server-form" class="server-create-grid"><label class="field compact"><span>Server name</span><input id="serverName" minlength="2" maxlength="64" placeholder="FFA Practice" required></label><label class="field compact"><span>IP or hostname</span><input id="serverTarget" maxlength="253" placeholder="ffaprac.de" required></label><label class="field compact"><span>License</span><select id="serverLicense" required><option value="">Select license</option>${licenseOptions}</select></label><button class="button button-primary" type="submit"${keys.length ? "" : " disabled"}>Whitelist server</button></form></section>` : ""}
+            <section class="panel server-list-panel"><div class="panel-heading split"><div><span class="section-kicker">Secure API v2</span><h2>Whitelisted servers</h2><p>${servers.length} visible server${servers.length === 1 ? "" : "s"}. Requests are matched against their real source IP.</p></div><label class="search"><span aria-hidden="true"></span><input id="server-search" type="search" placeholder="Search servers…" autocomplete="off"></label></div><div class="server-list">${serverCards || `<div class="empty-state"><span class="server-icon"></span><strong>No servers whitelisted</strong><p>Add a server and assign it to a license before using the v2 endpoint.</p></div>`}</div></section>
+        </div>` : ""}
 
         <div class="view-page" data-view="users">
         ${perms.manageUsers ? `
@@ -229,7 +260,7 @@ function renderAdmin({ currentUser, keys, users, totalKeys, totalUsers, liteBans
             <div class="panel-heading"><div><span class="section-kicker">Access control</span><h2>User management</h2><p>Create users and grant only the access each account needs. Admin access is fixed.</p></div></div>
             <form id="create-user-form" class="create-user">
                 <div class="form-grid"><label class="field compact"><span>Username</span><input id="newUsername" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" placeholder="new_user" required></label><label class="field compact"><span>Temporary password</span><input id="newPassword" type="password" minlength="10" maxlength="72" placeholder="10+ characters" required></label></div>
-                <div class="new-user-bottom"><div class="permission-grid create-permissions"><label class="permission"><input id="permView" type="checkbox" checked><span>View keys</span></label><label class="permission"><input id="permAdd" type="checkbox"><span>Add keys</span></label><label class="permission"><input id="permDelete" type="checkbox"><span>Delete keys</span></label><label class="permission"><input id="permUsers" type="checkbox"><span>Manage users</span></label><label class="permission"><input id="permLiteBans" type="checkbox"><span>View LiteBans</span></label></div><button class="button button-primary" type="submit">Create user</button></div>
+                <div class="new-user-bottom"><div class="permission-grid create-permissions"><label class="permission"><input id="permView" type="checkbox" checked><span>View keys</span></label><label class="permission"><input id="permAdd" type="checkbox"><span>Add keys</span></label><label class="permission"><input id="permDelete" type="checkbox"><span>Delete keys</span></label><label class="permission"><input id="permUsers" type="checkbox"><span>Manage users</span></label><label class="permission"><input id="permLiteBans" type="checkbox"><span>View LiteBans</span></label><label class="permission"><input id="permServers" type="checkbox"><span>View servers</span></label><label class="permission"><input id="permManageServers" type="checkbox"><span>Manage servers</span></label></div><button class="button button-primary" type="submit">Create user</button></div>
             </form>
             <div class="user-list">${userCards}</div>
         </section>` : `<section class="panel empty-state"><span class="lock-large"></span><h2>User management is restricted</h2><p>Your account cannot manage panel users.</p></section>`}

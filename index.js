@@ -10,6 +10,7 @@ const helmet = require("helmet");
 const bcrypt = require("bcryptjs");
 const { renderLogin, renderAdmin } = require("./views");
 const { getLiteBansSnapshot } = require("./litebans");
+const { normalizeIp, normalizeTarget, resolveServerTarget, serverMatchesIp } = require("./server-whitelist");
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -86,8 +87,29 @@ app.use(session({
 
 const KeySchema = new mongoose.Schema({
     key: { type: String, required: true, unique: true, trim: true, maxlength: 64 },
+    legacyEnabled: { type: Boolean, default: true },
+    legacyChecks: { type: Number, default: 0 },
+    secureChecks: { type: Number, default: 0 },
+    lastLegacyCheckAt: { type: Date, default: null },
+    lastSecureCheckAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now }
 });
+
+const ServerSchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 64 },
+    target: { type: String, required: true, trim: true, maxlength: 253 },
+    normalizedTarget: { type: String, required: true, trim: true, maxlength: 253 },
+    license: { type: mongoose.Schema.Types.ObjectId, ref: "Key", required: true, index: true },
+    enabled: { type: Boolean, default: true },
+    resolvedIps: { type: [String], default: [] },
+    resolvedHosts: { type: [String], default: [] },
+    lastResolutionError: { type: String, default: "", maxlength: 160 },
+    lastResolvedAt: { type: Date, default: null },
+    lastSeenAt: { type: Date, default: null },
+    lastSeenIp: { type: String, default: "", maxlength: 64 },
+    createdAt: { type: Date, default: Date.now }
+});
+ServerSchema.index({ license: 1, normalizedTarget: 1 }, { unique: true });
 
 const UserSchema = new mongoose.Schema({
     username: {
@@ -105,13 +127,16 @@ const UserSchema = new mongoose.Schema({
         addKeys: { type: Boolean, default: false },
         deleteKeys: { type: Boolean, default: false },
         manageUsers: { type: Boolean, default: false },
-        viewLiteBans: { type: Boolean, default: false }
+        viewLiteBans: { type: Boolean, default: false },
+        viewServers: { type: Boolean, default: false },
+        manageServers: { type: Boolean, default: false }
     },
     createdAt: { type: Date, default: Date.now }
 });
 
 const Key = mongoose.model("Key", KeySchema);
 const User = mongoose.model("User", UserSchema);
+const Server = mongoose.model("Server", ServerSchema);
 
 function isValidKey(key) {
     return typeof key === "string"
@@ -132,13 +157,32 @@ function isValidPassword(password) {
     return password.length >= 10 && password.length <= 128 && bytes <= 72;
 }
 
+function isValidServerName(name) {
+    return typeof name === "string" && name.length >= 2 && name.length <= 64;
+}
+
 function normalizePermissions(value) {
+    const manageServers = value?.manageServers === true;
     return {
         viewKeys: value?.viewKeys === true,
         addKeys: value?.addKeys === true,
         deleteKeys: value?.deleteKeys === true,
         manageUsers: value?.manageUsers === true,
-        viewLiteBans: value?.viewLiteBans === true
+        viewLiteBans: value?.viewLiteBans === true,
+        viewServers: value?.viewServers === true || manageServers,
+        manageServers
+    };
+}
+
+function ownerPermissions() {
+    return {
+        viewKeys: true,
+        addKeys: true,
+        deleteKeys: true,
+        manageUsers: true,
+        viewLiteBans: true,
+        viewServers: true,
+        manageServers: true
     };
 }
 
@@ -186,7 +230,7 @@ async function requireLogin(req, res, next) {
             return req.session.destroy(() => res.redirect("/login"));
         }
         if (user.isOwner) {
-            user.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
+            user.permissions = ownerPermissions();
         }
         req.currentUser = user;
         next();
@@ -243,7 +287,7 @@ function recordLoginFailure(key) {
 async function createOrMigrateOwner() {
     const existingOwner = await User.findOne({ isOwner: true });
     if (existingOwner) {
-        existingOwner.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
+        existingOwner.permissions = ownerPermissions();
         await existingOwner.save();
         return;
     }
@@ -251,7 +295,7 @@ async function createOrMigrateOwner() {
     const existingUser = await User.findOne().sort({ "permissions.manageUsers": -1, createdAt: 1 });
     if (existingUser) {
         existingUser.isOwner = true;
-        existingUser.permissions = { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true };
+        existingUser.permissions = ownerPermissions();
         await existingUser.save();
         console.log(`Owner protection assigned to ${existingUser.username}`);
         return;
@@ -262,7 +306,7 @@ async function createOrMigrateOwner() {
         username: ADMIN_USER,
         passwordHash,
         isOwner: true,
-        permissions: { viewKeys: true, addKeys: true, deleteKeys: true, manageUsers: true, viewLiteBans: true }
+        permissions: ownerPermissions()
     });
     console.log("First owner user created from ADMIN_USER / ADMIN_PASS");
 }
@@ -320,16 +364,58 @@ app.post("/logout", requireLogin, requireCsrf, (req, res) => {
     });
 });
 
-// Public compatibility endpoint used by existing Java plugins. Keep route, method and responses stable.
+// Legacy compatibility endpoint used by existing Java plugins. It intentionally
+// remains key-only during the migration to the server-bound v2 endpoint.
 app.get("/license", async (req, res) => {
     try {
         res.set("Cache-Control", "no-store");
         const key = String(req.query.key || "").trim();
         if (!isValidKey(key)) return res.type("text/plain").send("INVALID");
-        const exists = await Key.exists({ key });
-        return res.type("text/plain").send(exists ? "VALID" : "INVALID");
+        const license = await Key.findOne({ key, legacyEnabled: { $ne: false } }).select("_id").lean();
+        if (!license) return res.type("text/plain").send("INVALID");
+        res.type("text/plain").send("VALID");
+        Key.updateOne({ _id: license._id }, {
+            $inc: { legacyChecks: 1 },
+            $set: { lastLegacyCheckAt: new Date() }
+        }).catch(err => console.error("Could not record legacy license check:", err.message));
     } catch (err) {
         console.error("License check failed:", err.message);
+        return res.type("text/plain").send("ERROR");
+    }
+});
+
+// Server-bound endpoint for updated plugins. The request source IP must match
+// an enabled IP or one of the current DNS addresses assigned to this license.
+app.get("/v2/license", async (req, res) => {
+    try {
+        res.set("Cache-Control", "no-store");
+        const key = String(req.query.key || "").trim();
+        const clientIp = normalizeIp(req.ip);
+        if (!isValidKey(key) || !clientIp) return res.type("text/plain").send("INVALID");
+
+        const license = await Key.findOne({ key }).select("_id").lean();
+        if (!license) return res.type("text/plain").send("INVALID");
+        const servers = await Server.find({ license: license._id, enabled: true }).lean();
+        const checks = await Promise.all(servers.map(server => serverMatchesIp(server.normalizedTarget, clientIp)));
+        const matchIndex = checks.findIndex(check => check.matches);
+        if (matchIndex === -1) return res.type("text/plain").send("INVALID");
+
+        const matchedServer = servers[matchIndex];
+        const resolvedIps = checks[matchIndex].ips;
+        const resolvedHosts = checks[matchIndex].hosts;
+        const now = new Date();
+        res.type("text/plain").send("VALID");
+        Promise.all([
+            Key.updateOne({ _id: license._id }, {
+                $inc: { secureChecks: 1 },
+                $set: { lastSecureCheckAt: now }
+            }),
+            Server.updateOne({ _id: matchedServer._id }, {
+                $set: { lastSeenAt: now, lastSeenIp: clientIp, resolvedIps, resolvedHosts, lastResolvedAt: now, lastResolutionError: "" }
+            })
+        ]).catch(err => console.error("Could not record secure license check:", err.message));
+    } catch (err) {
+        console.error("Secure license check failed:", err.message);
         return res.type("text/plain").send("ERROR");
     }
 });
@@ -338,19 +424,23 @@ app.get("/admin", requireLogin, async (req, res, next) => {
     try {
         res.set("Cache-Control", "no-store");
         const perms = req.currentUser.permissions;
-        const [keys, users, totalKeys, totalUsers, liteBans] = await Promise.all([
-            perms.viewKeys ? Key.find().sort({ createdAt: -1 }).lean() : [],
+        const [keys, users, servers, totalKeys, totalUsers, totalServers, liteBans] = await Promise.all([
+            (perms.viewKeys || perms.viewServers) ? Key.find().sort({ createdAt: -1 }).lean() : [],
             perms.manageUsers ? User.find().sort({ isOwner: -1, createdAt: 1 }).lean() : [],
+            perms.viewServers ? Server.find().populate("license", "key").sort({ createdAt: -1 }).lean() : [],
             Key.countDocuments(),
             User.countDocuments(),
+            Server.countDocuments(),
             perms.viewLiteBans ? getLiteBansSnapshot() : Promise.resolve(null)
         ]);
         res.send(renderAdmin({
             currentUser: req.currentUser.toObject(),
             keys,
             users,
+            servers,
             totalKeys,
             totalUsers,
+            totalServers,
             liteBans,
             csrfToken: ensureCsrfToken(req)
         }));
@@ -374,8 +464,130 @@ app.post("/api/remove", requireLogin, requireCsrf, requirePermission("deleteKeys
     try {
         const key = String(req.body.key || "").trim();
         if (!isValidKey(key)) return res.status(400).send("Invalid key format");
-        await Key.deleteOne({ key });
+        const license = await Key.findOneAndDelete({ key });
+        if (license) await Server.deleteMany({ license: license._id });
         res.send("REMOVED");
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post("/api/licenses/legacy", requireLogin, requireCsrf, requirePermission("manageServers"), async (req, res, next) => {
+    try {
+        const id = String(req.body.id || "");
+        if (!mongoose.isValidObjectId(id)) return res.status(400).send("Invalid license ID");
+        const result = await Key.updateOne({ _id: id }, { $set: { legacyEnabled: req.body.enabled === true } });
+        if (!result.matchedCount) return res.status(404).send("License not found");
+        res.send("LEGACY UPDATED");
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post("/api/servers/add", requireLogin, requireCsrf, requirePermission("manageServers"), async (req, res, next) => {
+    try {
+        const name = String(req.body.name || "").trim();
+        const target = normalizeTarget(req.body.target);
+        const licenseId = String(req.body.licenseId || "");
+        if (!isValidServerName(name)) return res.status(400).send("Server name must contain 2-64 characters");
+        if (!target) return res.status(400).send("Enter an IP or hostname without protocol or port");
+        if (!mongoose.isValidObjectId(licenseId) || !await Key.exists({ _id: licenseId })) {
+            return res.status(400).send("Select a valid license");
+        }
+        let resolution = { target, ips: [], hosts: [] };
+        let lastResolutionError = "";
+        try {
+            resolution = await resolveServerTarget(target, { force: true });
+        } catch (err) {
+            lastResolutionError = err.code || "DNS lookup failed";
+        }
+        await Server.create({
+            name,
+            target,
+            normalizedTarget: resolution.target,
+            license: licenseId,
+            enabled: req.body.enabled !== false,
+            resolvedIps: resolution.ips,
+            resolvedHosts: resolution.hosts,
+            lastResolvedAt: resolution.ips.length ? new Date() : null,
+            lastResolutionError
+        });
+        res.send("SERVER CREATED");
+    } catch (err) {
+        if (err.code === 11000) return res.status(409).send("This server is already assigned to the license");
+        next(err);
+    }
+});
+
+app.post("/api/servers/update", requireLogin, requireCsrf, requirePermission("manageServers"), async (req, res, next) => {
+    try {
+        const id = String(req.body.id || "");
+        const name = String(req.body.name || "").trim();
+        const target = normalizeTarget(req.body.target);
+        const licenseId = String(req.body.licenseId || "");
+        if (!mongoose.isValidObjectId(id)) return res.status(400).send("Invalid server ID");
+        if (!isValidServerName(name)) return res.status(400).send("Server name must contain 2-64 characters");
+        if (!target) return res.status(400).send("Enter an IP or hostname without protocol or port");
+        if (!mongoose.isValidObjectId(licenseId) || !await Key.exists({ _id: licenseId })) {
+            return res.status(400).send("Select a valid license");
+        }
+        let resolution = { target, ips: [], hosts: [] };
+        let lastResolutionError = "";
+        try {
+            resolution = await resolveServerTarget(target, { force: true });
+        } catch (err) {
+            lastResolutionError = err.code || "DNS lookup failed";
+        }
+        const server = await Server.findById(id);
+        if (!server) return res.status(404).send("Server not found");
+        server.name = name;
+        server.target = target;
+        server.normalizedTarget = resolution.target;
+        server.license = licenseId;
+        server.enabled = req.body.enabled === true;
+        server.resolvedIps = resolution.ips;
+        server.resolvedHosts = resolution.hosts;
+        server.lastResolvedAt = resolution.ips.length ? new Date() : null;
+        server.lastResolutionError = lastResolutionError;
+        await server.save();
+        res.send("SERVER UPDATED");
+    } catch (err) {
+        if (err.code === 11000) return res.status(409).send("This server is already assigned to the license");
+        next(err);
+    }
+});
+
+app.post("/api/servers/refresh", requireLogin, requireCsrf, requirePermission("manageServers"), async (req, res, next) => {
+    try {
+        const id = String(req.body.id || "");
+        if (!mongoose.isValidObjectId(id)) return res.status(400).send("Invalid server ID");
+        const server = await Server.findById(id);
+        if (!server) return res.status(404).send("Server not found");
+        try {
+            const resolution = await resolveServerTarget(server.normalizedTarget, { force: true });
+            server.resolvedIps = resolution.ips;
+            server.resolvedHosts = resolution.hosts;
+            server.lastResolvedAt = new Date();
+            server.lastResolutionError = "";
+        } catch (err) {
+            server.resolvedIps = [];
+            server.resolvedHosts = [];
+            server.lastResolutionError = err.code || "DNS lookup failed";
+        }
+        await server.save();
+        res.send("SERVER REFRESHED");
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post("/api/servers/remove", requireLogin, requireCsrf, requirePermission("manageServers"), async (req, res, next) => {
+    try {
+        const id = String(req.body.id || "");
+        if (!mongoose.isValidObjectId(id)) return res.status(400).send("Invalid server ID");
+        const result = await Server.deleteOne({ _id: id });
+        if (!result.deletedCount) return res.status(404).send("Server not found");
+        res.send("SERVER REMOVED");
     } catch (err) {
         next(err);
     }
